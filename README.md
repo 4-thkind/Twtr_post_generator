@@ -1,217 +1,101 @@
-# Twtr Post Generator
+# 🐦 Tweet Forge
 
-An agentic AI application built with **LangGraph** and **Groq LLMs** that generates, evaluates, and optimizes engaging X (Twitter) posts through an iterative multi-agent workflow.
+An agentic **LangGraph** workflow that writes tweets, roasts them, and rewrites them until they're actually good.
 
----
+No "as an AI language model" energy allowed.
 
-# Features
+## How it works
 
-- AI-powered X post generation
-- Multi-agent architecture using LangGraph
-- Generator Agent creates an initial post
-- Evaluator Agent reviews quality and provides feedback
-- Optimizer Agent rewrites the post based on feedback
-- Automatic refinement until the post is approved or the maximum number of iterations is reached
-- Powered by Groq LLMs
+Three LLM personas, one loop:
 
----
-
-# Workflow
-
-```text
-            Topic
-              │
-              ▼
-      Generator Agent
-              │
-              ▼
-      Evaluator Agent
-              │
-      Approved?
-      ┌─────────────┐
-      │             │
-     Yes           No
-      │             │
-      ▼             ▼
- Final Output  Optimizer Agent
-                    │
-                    ▼
-             Evaluator Agent
+```
+START → generate → evaluate ──approved──→ END
+                       │
+                 needs_improvement
+                       │
+                       ↓
+                    optimize → evaluate (again)
 ```
 
----
+| Node | Role | Job |
+|---|---|---|
+| `generate` | Viral Creator | Writes the first draft from a topic |
+| `evaluate` | Ruthless Editor | Scores it on 7 criteria, returns structured `approved` / `needs_improvement` + feedback |
+| `optimize` | Punch-Up Writer | Rewrites the tweet based on that feedback |
 
-# Tech Stack
+The loop keeps spinning until the evaluator approves it — or `max_iteration` is hit, whichever comes first.
 
-- Python
-- LangGraph
-- LangChain
-- Groq API
-- Pydantic
+## Why the evaluator is strict
 
----
+The evaluator is instructed to assume **every tweet starts at zero** and has to earn approval. It auto-rejects anything that:
+- blows the 280-char limit
+- reads like generic motivational advice
+- smells like AI wrote it
+- uses hashtags, clickbait, or tired internet phrases
+- has grammar issues or is just confusing
 
-# Project Structure
+This is what keeps the loop from rubber-stamping mediocre drafts.
 
-```text
-Twtr_post_generator/
-│
-├── main.py
-├── .env
-├── .gitignore
-├── requirements.txt
-└── README.md
-```
-
----
-
-# Installation
-
-## Clone the repository
+## Setup
 
 ```bash
-git clone https://github.com/granthx/Twtr_post_generator.git
-cd Twtr_post_generator
+pip install langgraph langchain-groq python-dotenv pydantic
 ```
 
-## Create a virtual environment
+Add your Groq key to a `.env` file:
+
+```
+GROQ_API_KEY=your_key_here
+```
+
+## Usage
 
 ```bash
-python -m venv .venv
+python tweet_forge.py
 ```
 
-Activate it on Windows
+You'll be prompted for a topic, and it'll iterate (up to 5 times by default) until it lands on a tweet worth posting.
 
-```bash
-.venv\Scripts\activate
+```
+Enter topic: cold coffee
+
+Final Tweet:
+...
+
+Evaluation: approved
+
+Feedback:
+...
 ```
 
-Activate it on macOS/Linux
+## State shape
 
-```bash
-source .venv/bin/activate
+```python
+class TweetState(TypedDict):
+    topic: str
+    tweet: str
+    evaluation: Literal["approved", "needs_improvement"]
+    feedback: str
+    iteration: int
+    max_iteration: int
+    tweet_history: Annotated[list[str], operator.add]   # every draft, kept
+    feedback_history: Annotated[list[str], operator.add] # every round of feedback, kept
 ```
 
-## Install dependencies
+`tweet_history` and `feedback_history` accumulate across iterations (via `operator.add`), so you get a full paper trail of how the tweet evolved if you want to inspect it.
 
-```bash
-pip install -r requirements.txt
-```
+## Model
 
-## Configure environment variables
+All three roles currently run on `openai/gpt-oss-120b` via Groq — easy to swap per-node if you want a cheaper/faster model doing evaluation vs. generation.
 
-Create a `.env` file.
+## Tuning knobs
 
-```env
-GROQ_API_KEY=your_groq_api_key
-```
+- `max_iteration` — hard cap on optimize/evaluate loops (default: 5)
+- `temperature` — currently 0.7 across the board; lower it on the evaluator if you want harsher, more consistent scoring
+- Swap `ChatGroq` for any other LangChain chat model if you want to move off Groq
 
----
+## Known rough edges
 
-# Running the Project
-
-```bash
-python main.py
-```
-
-Example
-
-```text
-Enter Topic:
-Artificial Intelligence
-```
-
-The application will:
-
-1. Generate an X post.
-2. Evaluate the generated post.
-3. Optimize the post if needed.
-4. Repeat until the evaluator approves it or the maximum iteration limit is reached.
-
----
-
-# Agent Architecture
-
-## Generator Agent
-
-Responsible for generating the initial X post based on the provided topic.
-
-## Evaluator Agent
-
-Evaluates the generated post using multiple quality criteria including:
-
-- Originality
-- Hook
-- Clarity
-- Engagement
-- Authenticity
-- Readability
-
-Provides detailed feedback and determines whether the post should be approved or improved.
-
-## Optimizer Agent
-
-Uses the evaluator's feedback to improve the post while preserving its original intent.
-
----
-
-# Example Workflow
-
-```text
-Topic
-    │
-    ▼
-Generate Post
-    │
-    ▼
-Evaluate
-    │
-    ├── Approved
-    │       │
-    │       ▼
-    │   Final Output
-    │
-    └── Needs Improvement
-            │
-            ▼
-      Optimize Post
-            │
-            ▼
-       Evaluate Again
-```
-
----
-
-# Future Improvements
-
-- Streamlit web interface
-- Multiple writing styles
-- AI-generated hashtags
-- Trending topic integration
-- Memory-enabled agents
-- Social media analytics
-- Multi-platform support (LinkedIn, Threads, Bluesky)
-
----
-
-# Contributing
-
-Contributions are welcome.
-
-Feel free to fork the repository, create a feature branch, and submit a pull request.
-
----
-
-# License
-
-This project is licensed under the MIT License.
-
----
-
-# Author
-
-**Granth Chhabra**
-
-GitHub: https://github.com/granthx
-
-LinkedIn: https://www.linkedin.com/in/granthchhabra/
+- No retry/error handling around the Groq calls — a rate limit or network blip will just crash the run
+- `evaluate_tweet` relies on structured output support; if you swap models, make sure the new one supports `.with_structured_output()`
+- Character limit is enforced only via prompt instructions, not code — a model can still ignore it
