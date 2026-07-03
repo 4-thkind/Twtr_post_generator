@@ -1,40 +1,57 @@
-# 🐦 Tweet Forge
+# 🐦 tweet_forge
 
-An agentic **LangGraph** workflow that writes tweets, roasts them, and rewrites them until they're actually good.
+![python](https://img.shields.io/badge/python-3.10+-3776AB?logo=python&logoColor=white)
+![langgraph](https://img.shields.io/badge/langgraph-agentic%20loop-1C3C3C)
+![groq](https://img.shields.io/badge/groq-gpt--oss--120b-F55036?logo=groq&logoColor=white)
+![license](https://img.shields.io/badge/license-MIT-informational)
 
-No "as an AI language model" energy allowed.
+A LangGraph loop that writes a tweet, evaluates it like a ruthless editor, and rewrites it until it earns approval — or runs out of tries.
 
-## How it works
+## What it does
 
-Three LLM personas, one loop:
+The whole thing is a loop between three LLM personas. A generator drafts a tweet from whatever topic you give it, writing like a top-tier X creator: witty, concise, one strong idea, no clichés, no AI-sounding filler.
 
+That draft goes to an evaluator, which acts like a ruthless editor. It assumes every tweet starts at zero and has to earn its approval, checking things like originality, hook strength, clarity, and whether the ending actually lands. It auto-rejects anything too long, generic, AI-sounding, or leaning on hashtags and clickbait.
+
+If it's not approved, the feedback goes to an optimizer, which rewrites the tweet accordingly, and the new draft goes straight back to the evaluator. This keeps cycling until the tweet is approved or `max_iteration` is hit, whichever comes first.
+
+## The graph
+
+```mermaid
+flowchart LR
+    START([START]) --> generate[generate]
+    generate --> evaluate[evaluate]
+    evaluate -->|approved| END([END])
+    evaluate -->|needs_improvement| optimize[optimize]
+    optimize --> evaluate
 ```
-START → generate → evaluate ──approved──→ END
-                       │
-                 needs_improvement
-                       │
-                       ↓
-                    optimize → evaluate (again)
+
+Just a conditional edge deciding whether to exit or keep looping.
+
+## State
+
+<details>
+<summary>tap to expand the state shape</summary>
+
+```python
+class TweetState(TypedDict):
+    topic: str
+    tweet: str
+    evaluation: Literal["approved", "needs_improvement"]
+    feedback: str
+    iteration: int
+    max_iteration: int
+    tweet_history: Annotated[list[str], operator.add]
+    feedback_history: Annotated[list[str], operator.add]
 ```
 
-| Node | Role | Job |
-|---|---|---|
-| `generate` | Viral Creator | Writes the first draft from a topic |
-| `evaluate` | Ruthless Editor | Scores it on 7 criteria, returns structured `approved` / `needs_improvement` + feedback |
-| `optimize` | Punch-Up Writer | Rewrites the tweet based on that feedback |
+`tweet_history` and `feedback_history` use LangGraph's `operator.add` reducer, so every draft and every round of feedback accumulates across iterations instead of getting overwritten. Handy for tracing how a tweet evolved rather than just seeing the final result.
 
-The loop keeps spinning until the evaluator approves it — or `max_iteration` is hit, whichever comes first.
+</details>
 
-## Why the evaluator is strict
+## Models
 
-The evaluator is instructed to assume **every tweet starts at zero** and has to earn approval. It auto-rejects anything that:
-- blows the 280-char limit
-- reads like generic motivational advice
-- smells like AI wrote it
-- uses hashtags, clickbait, or tired internet phrases
-- has grammar issues or is just confusing
-
-This is what keeps the loop from rubber-stamping mediocre drafts.
+All three roles currently run on `openai/gpt-oss-120b` through Groq. Nothing stops you from putting a different model on each node though, say a cheaper one for generation and a sharper one for evaluation, since that's the node doing the actual gatekeeping.
 
 ## Setup
 
@@ -42,7 +59,7 @@ This is what keeps the loop from rubber-stamping mediocre drafts.
 pip install langgraph langchain-groq python-dotenv pydantic
 ```
 
-Add your Groq key to a `.env` file:
+Drop your Groq key into a `.env` file:
 
 ```
 GROQ_API_KEY=your_key_here
@@ -54,7 +71,10 @@ GROQ_API_KEY=your_key_here
 python tweet_forge.py
 ```
 
-You'll be prompted for a topic, and it'll iterate (up to 5 times by default) until it lands on a tweet worth posting.
+It'll ask for a topic, then iterate (5 rounds max by default) until it lands on something worth posting, printing the final tweet along with the evaluator's verdict and feedback.
+
+<details>
+<summary>example run</summary>
 
 ```
 Enter topic: cold coffee
@@ -68,34 +88,27 @@ Feedback:
 ...
 ```
 
-## State shape
+</details>
 
-```python
-class TweetState(TypedDict):
-    topic: str
-    tweet: str
-    evaluation: Literal["approved", "needs_improvement"]
-    feedback: str
-    iteration: int
-    max_iteration: int
-    tweet_history: Annotated[list[str], operator.add]   # every draft, kept
-    feedback_history: Annotated[list[str], operator.add] # every round of feedback, kept
-```
+## Rough edges
 
-`tweet_history` and `feedback_history` accumulate across iterations (via `operator.add`), so you get a full paper trail of how the tweet evolved if you want to inspect it.
+<details>
+<summary>no retry / error handling</summary>
 
-## Model
+There's no retry or error handling around the Groq calls, so a rate limit or dropped connection just crashes the run.
 
-All three roles currently run on `openai/gpt-oss-120b` via Groq — easy to swap per-node if you want a cheaper/faster model doing evaluation vs. generation.
+</details>
 
-## Tuning knobs
+<details>
+<summary>structured output dependency</summary>
 
-- `max_iteration` — hard cap on optimize/evaluate loops (default: 5)
-- `temperature` — currently 0.7 across the board; lower it on the evaluator if you want harsher, more consistent scoring
-- Swap `ChatGroq` for any other LangChain chat model if you want to move off Groq
+The evaluator depends on structured output support, so swapping in a different model means checking it still works with `.with_structured_output()`.
 
-## Known rough edges
+</details>
 
-- No retry/error handling around the Groq calls — a rate limit or network blip will just crash the run
-- `evaluate_tweet` relies on structured output support; if you swap models, make sure the new one supports `.with_structured_output()`
-- Character limit is enforced only via prompt instructions, not code — a model can still ignore it
+<details>
+<summary>character limit isn't code-enforced</summary>
+
+The 280-character limit is only enforced through the prompt — nothing in code actually stops a model from ignoring it.
+
+</details>
