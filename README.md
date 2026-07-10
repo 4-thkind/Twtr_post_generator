@@ -1,4 +1,4 @@
-# 🐦 tweet-forge
+# 🐦 Tweet-forge
 
 ![python](https://img.shields.io/badge/python-3.10+-3776AB?logo=python&logoColor=white)
 ![langgraph](https://img.shields.io/badge/langgraph-agentic%20loop-1C3C3C)
