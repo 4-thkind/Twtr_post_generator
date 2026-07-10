@@ -3,7 +3,7 @@
 ![python](https://img.shields.io/badge/python-3.10+-3776AB?logo=python&logoColor=white)
 ![langgraph](https://img.shields.io/badge/langgraph-agentic%20loop-1C3C3C)
 ![groq](https://img.shields.io/badge/groq-gpt--oss--120b-F55036?logo=groq&logoColor=white)
-![license](https://img.shields.io/badge/license-MIT-informational)
+
 
 A LangGraph loop that writes a tweet, evaluates it like a ruthless editor, and rewrites it until it earns approval — or runs out of tries.
 
